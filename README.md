@@ -18,6 +18,19 @@ node server.mjs
 
 브라우저에서 `http://127.0.0.1:4178`로 접속하면 됩니다.
 
+## Cloudflare Pages 설정
+
+Cloudflare Pages에 연결할 때는 아래처럼 설정합니다.
+
+```txt
+Framework preset: None
+Build command: 비워둠
+Build output directory: public
+Root directory: /
+```
+
+`/api/search`와 `/api/health`는 `functions/` 폴더의 Pages Functions가 처리합니다.
+
 ## 데이터 소스
 
 - 뉴스: Google News RSS
@@ -36,3 +49,10 @@ NAVER_CLIENT_SECRET=발급받은_CLIENT_SECRET
 ```
 
 키가 없으면 기존처럼 Google News만 사용합니다.
+
+Cloudflare Pages에서는 `.env` 파일을 올리지 말고, Pages 프로젝트의 Settings > Environment variables에 아래 두 값을 추가합니다.
+
+```bash
+NAVER_CLIENT_ID=발급받은_CLIENT_ID
+NAVER_CLIENT_SECRET=발급받은_CLIENT_SECRET
+```
