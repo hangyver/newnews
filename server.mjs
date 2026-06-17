@@ -132,10 +132,10 @@ async function translateToKorean(text) {
 // 사용할 수 있는 무료 CORS 프록시 제공업체 목록입니다.
 // 특정 프록시가 오버로드되거나 522 타임아웃이 발생하면 다음 순서의 프록시로 자동 전환됩니다.
 const PROXY_PROVIDERS = [
-  // 1순위: corsproxy.io (대역폭이 넓고 속도가 빠름)
+  // 1순위: corsproxy.io (대역폭이 넓고 속도가 가장 우수, 공식 가이드의 ?url= 접두사 포맷 준수)
   {
     name: "corsproxy.io",
-    getUrl: (url) => `https://corsproxy.io/?${encodeURIComponent(url.toString())}`,
+    getUrl: (url) => `https://corsproxy.io/?url=${encodeURIComponent(url.toString())}`,
     parse: async (res) => await res.text()
   },
   // 2순위: allorigins.win (무료 오픈소스 프록시, JSON 래핑 형태)
@@ -150,10 +150,10 @@ const PROXY_PROVIDERS = [
       return payload.contents;
     }
   },
-  // 3순위: codetabs.com (API 요청용 대체 프록시)
+  // 3순위: thingproxy.freeboard.io (쿼리 인코딩 에러가 덜한 대체 프록시, URL을 접미사 경로로 직접 매핑)
   {
-    name: "codetabs.com",
-    getUrl: (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url.toString())}`,
+    name: "thingproxy.freeboard.io",
+    getUrl: (url) => `https://thingproxy.freeboard.io/fetch/${url.toString()}`,
     parse: async (res) => await res.text()
   }
 ];
