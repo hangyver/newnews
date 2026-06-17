@@ -33,10 +33,6 @@
                 <button class="mode-button" data-mode="youtube" type="button">유튜브</button>
                 <button class="mode-button" data-mode="sns" type="button">SNS</button>
               </div>
-              <label class="refresh-toggle">
-                <input id="autoRefresh" type="checkbox" checked />
-                <span>60초 자동 새로고침</span>
-              </label>
             </div>
             <p class="search-hint">
               뉴스 제목은 한국어로 자동 번역됩니다. 주식 종목은 `AAPL`, `TSLA`, `005930.KS` 같은 심볼로 검색해보세요.
@@ -88,6 +84,9 @@
                 <h2>가장 최근 뉴스</h2>
               </div>
               <p id="statusMessage" class="status-message">검색어를 입력하면 최신 뉴스 흐름을 바로 가져옵니다.</p>
+              <div class="filter-row">
+                <input id="filterInput" type="text" placeholder="결과 내 재검색 (예: 키워드, 매체명, 내용)" autocomplete="off" />
+              </div>
             </div>
             <div id="newsList" class="news-list"></div>
           </div>

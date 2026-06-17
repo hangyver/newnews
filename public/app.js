@@ -1,6 +1,6 @@
 const queryInput = document.querySelector("#queryInput");
 const searchButton = document.querySelector("#searchButton");
-const autoRefresh = document.querySelector("#autoRefresh");
+const filterInput = document.querySelector("#filterInput");
 const currentQuery = document.querySelector("#currentQuery");
 const lastUpdated = document.querySelector("#lastUpdated");
 const newsCount = document.querySelector("#newsCount");
@@ -16,7 +16,7 @@ const newsItemTemplate = document.querySelector("#newsItemTemplate");
 const modeButtons = [...document.querySelectorAll(".mode-button")];
 
 let currentMode = "auto";
-let refreshTimer = null;
+let allNewsItems = []; // 현재 검색 결과를 백업하여 결과 내 검색 시 필터링 원본으로 활용합니다.
 
 function formatRelativeDate(value) {
   const time = new Date(value);
@@ -226,6 +226,10 @@ async function runSearch() {
     statusMessage.textContent = `${payload.news.length}개의 최신 기사를 한국어 번역 제목으로 정렬했습니다.`;
     setFeedback(`검색 완료: ${payload.news.length}개의 최신 기사를 한국어로 표시했습니다.`);
 
+    // 결과 내 재검색을 위해 원본 데이터를 저장하고 필터 인풋을 비웁니다.
+    allNewsItems = payload.news;
+    filterInput.value = "";
+
     renderNews(payload.news);
     renderStock(payload.stock);
     document.querySelector(".dashboard").scrollIntoView({ behavior: "smooth", block: "start" });
@@ -240,20 +244,36 @@ async function runSearch() {
   }
 }
 
-function resetRefreshTimer() {
-  if (refreshTimer) {
-    clearInterval(refreshTimer);
-    refreshTimer = null;
+// 결과 내 재검색 실시간 필터링 이벤트 핸들러 바인딩
+filterInput.addEventListener("input", () => {
+  const query = filterInput.value.trim().toLowerCase();
+
+  // 입력값이 없으면 원본 리스트 전체 복원 렌더링
+  if (!query) {
+    renderNews(allNewsItems);
+    newsCount.textContent = String(allNewsItems.length);
+    return;
   }
 
-  if (autoRefresh.checked) {
-    refreshTimer = setInterval(() => {
-      if (queryInput.value.trim()) {
-        runSearch();
-      }
-    }, 60000);
-  }
-}
+  // 번역 제목, 원본 제목, 뉴스 매체 출처 및 플랫폼을 타깃으로 포함 여부 필터링
+  const filtered = allNewsItems.filter((item) => {
+    const title = (item.translatedTitle || item.title || "").toLowerCase();
+    const original = (item.originalTitle || item.title || "").toLowerCase();
+    const source = (item.source || "").toLowerCase();
+    const provider = (item.provider || "").toLowerCase();
+
+    return (
+      title.includes(query) ||
+      original.includes(query) ||
+      source.includes(query) ||
+      provider.includes(query)
+    );
+  });
+
+  renderNews(filtered);
+  // 필터링 결과 건수에 맞춰 기사 수 뱃지 갱신
+  newsCount.textContent = String(filtered.length);
+});
 
 searchButton.addEventListener("click", runSearch);
 queryInput.addEventListener("keydown", (event) => {
@@ -271,9 +291,6 @@ modeButtons.forEach((button) => {
   });
 });
 
-autoRefresh.addEventListener("change", resetRefreshTimer);
-
 setMode("auto");
-resetRefreshTimer();
 renderEmptyState("검색어를 입력하면 여기서 가장 최근 뉴스부터 시간순으로 확인할 수 있습니다.");
 setFeedback("검색어를 입력한 뒤 검색 버튼을 누르면 결과 영역으로 바로 이동합니다.");
