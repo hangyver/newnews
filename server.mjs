@@ -129,6 +129,37 @@ async function translateToKorean(text) {
   }
 }
 
+async function translateToEnglish(text) {
+  const cleanText = sanitizeText(text);
+  if (!cleanText) {
+    return "";
+  }
+
+  const translateUrl = new URL("https://translate.googleapis.com/translate_a/single");
+  translateUrl.searchParams.set("client", "gtx");
+  translateUrl.searchParams.set("sl", "auto");
+  translateUrl.searchParams.set("tl", "en");
+  translateUrl.searchParams.set("dt", "t");
+  translateUrl.searchParams.set("q", cleanText);
+
+  try {
+    const response = await fetch(translateUrl, {
+      headers: {
+        "User-Agent": "newnews-local-app/1.0",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Query translation failed with ${response.status}`);
+    }
+
+    const payload = await response.json();
+    return parseGoogleTranslateResponse(payload);
+  } catch {
+    return "";
+  }
+}
+
 async function translateNewsItems(items) {
   const translatedItems = await Promise.all(
     items.map(async (item) => ({
@@ -299,15 +330,27 @@ function mergeNewsItems(...groups) {
     .slice(0, 60);
 }
 
+async function getGlobalSearchQueries(query) {
+  const translatedQuery = await translateToEnglish(query);
+  return [...new Set([query, translatedQuery].map((item) => sanitizeText(item)).filter(Boolean))];
+}
+
 async function fetchLatestNews(query) {
+  const globalQueries = await getGlobalSearchQueries(query);
   const [naverNews, googleNews, gdeltNews] = await Promise.all([
     fetchNaverNews(query).catch((error) => ({
       enabled: Boolean(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET),
       error: error instanceof Error ? error.message : "Naver news request failed",
       items: [],
     })),
-    fetchNewsSource("Google News", () => fetchGoogleNews(query)),
-    fetchNewsSource("GDELT", () => fetchGdeltNews(query)),
+    fetchNewsSource("Google News", async () => {
+      const groups = await Promise.all(globalQueries.map((item) => fetchGoogleNews(item)));
+      return mergeNewsItems(...groups);
+    }),
+    fetchNewsSource("GDELT", async () => {
+      const groups = await Promise.all(globalQueries.map((item) => fetchGdeltNews(item)));
+      return mergeNewsItems(...groups);
+    }),
   ]);
 
   const news = mergeNewsItems(naverNews.items, googleNews.items, gdeltNews.items);
