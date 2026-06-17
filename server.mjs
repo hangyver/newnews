@@ -129,6 +129,57 @@ async function translateToKorean(text) {
   }
 }
 
+async function fetchRssWithProxy(url) {
+  // allorigins 무료 CORS/IP 우회 프록시 서비스를 이용해 Cloudflare의 IP 차단 문제를 우회합니다.
+  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url.toString())}`;
+  
+  const response = await fetch(proxyUrl, {
+    headers: {
+      "User-Agent": "newnews-local-app/1.0",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Proxy bypass request failed with ${response.status}`);
+  }
+
+  const payload = await response.json();
+  if (!payload || !payload.contents) {
+    throw new Error("Empty proxy bypass payload");
+  }
+
+  return payload.contents; // XML 내용 반환
+}
+
+async function fetchRssWithFallback(url) {
+  try {
+    // 1차 시도: 직접 요청 (로컬 환경 등 차단이 우회된 경우 극도로 빠른 기가비트 전송)
+    const response = await fetch(url, {
+      headers: {
+        "User-Agent": "newnews-local-app/1.0",
+      },
+    });
+
+    if (response.ok) {
+      return await response.text();
+    }
+
+    // 구글 차단 응답(403, 429, 503) 발생 시 프록시 우회 기법으로 폴백합니다.
+    if ([403, 429, 503].includes(response.status)) {
+      return await fetchRssWithProxy(url);
+    }
+
+    throw new Error(`Direct fetch status failed with ${response.status}`);
+  } catch (error) {
+    // 네트워크 단절 등 직접 호출 불능 시에도 2차 안전판으로 프록시 우회를 수행합니다.
+    try {
+      return await fetchRssWithProxy(url);
+    } catch {
+      throw new Error(error instanceof Error ? error.message : "Google RSS retrieval failed");
+    }
+  }
+}
+
 async function translateToEnglish(text) {
   const cleanText = sanitizeText(text);
   if (!cleanText) {
@@ -209,17 +260,8 @@ async function fetchGoogleNews(query) {
   rssUrl.searchParams.set("gl", "US");
   rssUrl.searchParams.set("ceid", "US:en");
 
-  const response = await fetch(rssUrl, {
-    headers: {
-      "User-Agent": "newnews-local-app/1.0",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`News request failed with ${response.status}`);
-  }
-
-  const xml = await response.text();
+  // 프록시 우회 처리가 결합된 헬퍼를 이용하여 호출하도록 전환합니다.
+  const xml = await fetchRssWithFallback(rssUrl);
   return parseGoogleNewsRss(xml).slice(0, 40);
 }
 
@@ -231,28 +273,48 @@ async function fetchGdeltNews(query) {
   gdeltUrl.searchParams.set("sort", "DateDesc");
   gdeltUrl.searchParams.set("maxrecords", "50");
 
-  const response = await fetch(gdeltUrl, {
-    headers: {
-      "User-Agent": "newnews-local-app/1.0",
-    },
-  });
+  try {
+    const response = await fetch(gdeltUrl, {
+      headers: {
+        "User-Agent": "newnews-local-app/1.0",
+      },
+    });
 
-  if (!response.ok) {
-    throw new Error(`GDELT news request failed with ${response.status}`);
+    if (!response.ok) {
+      throw new Error(`GDELT news request failed with ${response.status}`);
+    }
+
+    const payload = await response.json();
+    const articles = Array.isArray(payload.articles) ? payload.articles : [];
+
+    return articles
+      .map((item) => ({
+        title: sanitizeText(item.title),
+        url: item.url,
+        source: item.domain || getHostname(item.url) || "GDELT",
+        provider: "GDELT",
+        publishedAt: item.seendate ? new Date(item.seendate).toISOString() : null,
+      }))
+      .filter((item) => item.title && item.url);
+  } catch (error) {
+    // GDELT 차단이 발생할 시에도 AllOrigins 프록시를 통해 우회 수집을 하도록 안전장치를 덧댑니다.
+    try {
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(gdeltUrl.toString())}`;
+      const response = await fetch(proxyUrl);
+      const payload = await response.json();
+      const parsed = JSON.parse(payload.contents);
+      const articles = Array.isArray(parsed.articles) ? parsed.articles : [];
+      return articles.map((item) => ({
+        title: sanitizeText(item.title),
+        url: item.url,
+        source: item.domain || getHostname(item.url) || "GDELT",
+        provider: "GDELT",
+        publishedAt: item.seendate ? new Date(item.seendate).toISOString() : null,
+      })).filter((item) => item.title && item.url);
+    } catch {
+      throw error;
+    }
   }
-
-  const payload = await response.json();
-  const articles = Array.isArray(payload.articles) ? payload.articles : [];
-
-  return articles
-    .map((item) => ({
-      title: sanitizeText(item.title),
-      url: item.url,
-      source: item.domain || getHostname(item.url) || "GDELT",
-      provider: "GDELT",
-      publishedAt: item.seendate ? new Date(item.seendate).toISOString() : null,
-    }))
-    .filter((item) => item.title && item.url);
 }
 
 async function fetchNaverNews(query) {
@@ -408,17 +470,8 @@ async function fetchYoutubeRss(query) {
   rssUrl.searchParams.set("gl", "US");
   rssUrl.searchParams.set("ceid", "US:en");
 
-  const response = await fetch(rssUrl, {
-    headers: {
-      "User-Agent": "newnews-local-app/1.0",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`Youtube RSS fallback failed with ${response.status}`);
-  }
-
-  const xml = await response.text();
+  // 프록시 우회 처리가 결합된 헬퍼를 활용합니다.
+  const xml = await fetchRssWithFallback(rssUrl);
   const items = parseGoogleNewsRss(xml).slice(0, 20);
 
   return items.map((item) => ({
@@ -430,23 +483,14 @@ async function fetchYoutubeRss(query) {
 
 async function fetchSnsSearch(query) {
   const rssUrl = new URL("https://news.google.com/rss/search");
-  // X(Twitter), Instagram, Threads, Reddit 검색 범주를 구글 RSS 연산자로 묶어 연동합니다.
-  rssUrl.searchParams.set("q", `(site:twitter.com OR site:x.com OR site:instagram.com OR site:threads.net OR site:reddit.com) ${query}`);
+  // 트위터/X, 페이스북, 인스타그램, 스레드 4가지 플랫폼만 검색하도록 필터를 최적화합니다.
+  rssUrl.searchParams.set("q", `(site:twitter.com OR site:x.com OR site:facebook.com OR site:instagram.com OR site:threads.net) ${query}`);
   rssUrl.searchParams.set("hl", "en-US");
   rssUrl.searchParams.set("gl", "US");
   rssUrl.searchParams.set("ceid", "US:en");
 
-  const response = await fetch(rssUrl, {
-    headers: {
-      "User-Agent": "newnews-local-app/1.0",
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error(`SNS search request failed with ${response.status}`);
-  }
-
-  const xml = await response.text();
+  // 프록시 우회 처리가 결합된 헬퍼를 활용합니다.
+  const xml = await fetchRssWithFallback(rssUrl);
   const rawItems = parseGoogleNewsRss(xml).slice(0, 30);
 
   return rawItems.map((item) => {
@@ -456,12 +500,12 @@ async function fetchSnsSearch(query) {
     // 호스트 도메인 명에 맞게 플랫폼 뱃지를 할당합니다.
     if (host.includes("twitter.com") || host.includes("x.com")) {
       provider = "Twitter";
+    } else if (host.includes("facebook.com")) {
+      provider = "Facebook";
     } else if (host.includes("instagram.com")) {
       provider = "Instagram";
     } else if (host.includes("threads.net")) {
       provider = "Threads";
-    } else if (host.includes("reddit.com")) {
-      provider = "Reddit";
     }
 
     return {

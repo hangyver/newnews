@@ -113,7 +113,7 @@ function renderNews(items) {
 
     // 1. 소셜 미디어 플랫폼별 컬러 뱃지 렌더링 처리
     const provider = (item.provider || "").toLowerCase();
-    const isSnsOrYoutube = ["twitter", "instagram", "threads", "reddit", "youtube"].includes(provider);
+    const isSnsOrYoutube = ["twitter", "instagram", "threads", "facebook", "youtube"].includes(provider);
     if (isSnsOrYoutube) {
       const badge = document.createElement("span");
       badge.className = `badge-sns badge-${provider}`;
