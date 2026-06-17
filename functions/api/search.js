@@ -133,6 +133,38 @@ async function fetchGoogleNews(query) {
   return parseGoogleNewsRss(xml).slice(0, 40);
 }
 
+async function fetchGdeltNews(query) {
+  const gdeltUrl = new URL("https://api.gdeltproject.org/api/v2/doc/doc");
+  gdeltUrl.searchParams.set("query", query);
+  gdeltUrl.searchParams.set("mode", "ArtList");
+  gdeltUrl.searchParams.set("format", "json");
+  gdeltUrl.searchParams.set("sort", "DateDesc");
+  gdeltUrl.searchParams.set("maxrecords", "50");
+
+  const response = await fetch(gdeltUrl, {
+    headers: {
+      "User-Agent": "newnews-pages-app/1.0",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`GDELT news request failed with ${response.status}`);
+  }
+
+  const payload = await response.json();
+  const articles = Array.isArray(payload.articles) ? payload.articles : [];
+
+  return articles
+    .map((item) => ({
+      title: sanitizeText(item.title),
+      url: item.url,
+      source: item.domain || getHostname(item.url) || "GDELT",
+      provider: "GDELT",
+      publishedAt: item.seendate ? new Date(item.seendate).toISOString() : null,
+    }))
+    .filter((item) => item.title && item.url);
+}
+
 async function fetchNaverNews(query, env) {
   const clientId = env.NAVER_CLIENT_ID;
   const clientSecret = env.NAVER_CLIENT_SECRET;
@@ -182,6 +214,23 @@ async function fetchNaverNews(query, env) {
   };
 }
 
+async function fetchNewsSource(name, fetcher) {
+  try {
+    const items = await fetcher();
+    return {
+      name,
+      error: null,
+      items,
+    };
+  } catch (error) {
+    return {
+      name,
+      error: error instanceof Error ? error.message : `${name} news request failed`,
+      items: [],
+    };
+  }
+}
+
 function mergeNewsItems(...groups) {
   const seen = new Set();
 
@@ -200,28 +249,35 @@ function mergeNewsItems(...groups) {
 }
 
 async function fetchLatestNews(query, env) {
-  const [googleNews, naverNews] = await Promise.all([
-    fetchGoogleNews(query),
+  const [naverNews, googleNews, gdeltNews] = await Promise.all([
     fetchNaverNews(query, env).catch((error) => ({
       enabled: Boolean(env.NAVER_CLIENT_ID && env.NAVER_CLIENT_SECRET),
       error: error instanceof Error ? error.message : "Naver news request failed",
       items: [],
     })),
+    fetchNewsSource("Google News", () => fetchGoogleNews(query)),
+    fetchNewsSource("GDELT", () => fetchGdeltNews(query)),
   ]);
 
-  const news = mergeNewsItems(googleNews, naverNews.items);
+  const news = mergeNewsItems(naverNews.items, googleNews.items, gdeltNews.items);
 
   return {
     items: await translateNewsItems(news),
     providers: {
       google: {
         enabled: true,
-        count: googleNews.length,
+        count: googleNews.items.length,
+        error: googleNews.error,
       },
       naver: {
         enabled: naverNews.enabled,
         count: naverNews.items.length,
         error: naverNews.error || null,
+      },
+      gdelt: {
+        enabled: true,
+        count: gdeltNews.items.length,
+        error: gdeltNews.error,
       },
     },
   };
