@@ -317,7 +317,14 @@ async function fetchYoutubeSearch(query, env) {
       });
 
       if (!response.ok) {
-        throw new Error(`Youtube API returned ${response.status}`);
+        let errMsg = `Youtube API returned ${response.status}`;
+        try {
+          const errPayload = await response.json();
+          if (errPayload?.error?.message) {
+            errMsg = `Youtube API Error: ${errPayload.error.message} (${response.status})`;
+          }
+        } catch {}
+        throw new Error(errMsg);
       }
 
       const payload = await response.json();
@@ -331,8 +338,13 @@ async function fetchYoutubeSearch(query, env) {
         publishedAt: item.snippet.publishedAt ? new Date(item.snippet.publishedAt).toISOString() : null,
         thumbnail: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.medium?.url || "",
       }));
-    } catch {
-      // 공식 API 장애 시 RSS 수집 방식으로 우회 처리합니다.
+    } catch (error) {
+      // 명시적인 유튜브 API 스펙 에러(예: 키 인증 실패, 할당량 초과)인 경우 
+      // 우회 RSS로 숨기지 않고 원인을 명확하게 밖으로 던집니다.
+      if (error instanceof Error && error.message.startsWith("Youtube API Error:")) {
+        throw error;
+      }
+      // 그 외의 일반 네트워크 에러인 경우에만 RSS 우회 연동 폴백을 진행합니다.
       return fetchYoutubeRss(query);
     }
   } else {
