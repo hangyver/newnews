@@ -29,6 +29,15 @@ Build output directory: dist
 Root directory: /
 ```
 
+만약 위 설정 후에도 루트 404가 계속 나오면, 임시 복구용으로 아래 설정도 동작합니다.
+
+```txt
+Framework preset: None
+Build command: 비워둠
+Build output directory: /
+Root directory: /
+```
+
 `/api/search`와 `/api/health`는 `functions/` 폴더의 Pages Functions가 처리합니다.
 
 ## 데이터 소스

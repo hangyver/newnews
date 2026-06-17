@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NewNews Live Search</title>
+    <link rel="stylesheet" href="/public/styles.css" />
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-copy">
+          <p class="eyebrow">LIVE GLOBAL NEWS MONITOR</p>
+          <h1>검색한 단어의 가장 최근 뉴스부터 분 단위로 추적합니다.</h1>
+          <p class="hero-text">
+            일반 키워드는 전세계 최신 뉴스를 시간순으로 보여주고, 주식 종목은 실시간 뉴스와 당일 차트를 함께 표시합니다.
+          </p>
+        </div>
+        <div class="hero-panel">
+          <div class="search-card">
+            <label class="search-label" for="queryInput">검색어 또는 주식 종목</label>
+            <div class="search-row">
+              <input id="queryInput" type="text" placeholder="예: Tesla, NVDA, 금리, bitcoin" autocomplete="off" />
+              <button id="searchButton" type="button">검색</button>
+            </div>
+            <div class="controls-row">
+              <div class="mode-switch" role="radiogroup" aria-label="검색 모드">
+                <button class="mode-button active" data-mode="auto" type="button">자동</button>
+                <button class="mode-button" data-mode="news" type="button">뉴스</button>
+                <button class="mode-button" data-mode="stock" type="button">주식</button>
+              </div>
+              <label class="refresh-toggle">
+                <input id="autoRefresh" type="checkbox" checked />
+                <span>60초 자동 새로고침</span>
+              </label>
+            </div>
+            <p class="search-hint">
+              뉴스 제목은 한국어로 자동 번역됩니다. 주식 종목은 `AAPL`, `TSLA`, `005930.KS` 같은 심볼로 검색해보세요.
+            </p>
+            <p id="searchFeedback" class="search-feedback" role="status" aria-live="polite">
+              검색 대기 중
+            </p>
+          </div>
+        </div>
+      </header>
+
+      <main class="dashboard">
+        <section class="summary-bar">
+          <div>
+            <span class="summary-label">현재 검색</span>
+            <strong id="currentQuery">없음</strong>
+          </div>
+          <div>
+            <span class="summary-label">마지막 갱신</span>
+            <strong id="lastUpdated">대기 중</strong>
+          </div>
+          <div>
+            <span class="summary-label">기사 수</span>
+            <strong id="newsCount">0</strong>
+          </div>
+        </section>
+
+        <section class="content-grid">
+          <div class="stock-panel card" id="stockPanel" hidden>
+            <div class="card-head">
+              <div>
+                <p class="section-kicker">Stock Snapshot</p>
+                <h2 id="stockTitle">종목 차트</h2>
+              </div>
+              <div class="price-box">
+                <strong id="stockPrice">-</strong>
+                <span id="stockChange">-</span>
+              </div>
+            </div>
+            <div class="chart-area">
+              <svg id="stockChart" viewBox="0 0 640 260" preserveAspectRatio="none" aria-label="주가 차트"></svg>
+            </div>
+          </div>
+
+          <div class="news-panel card">
+            <div class="card-head card-head-stack">
+              <div>
+                <p class="section-kicker">Latest News Feed</p>
+                <h2>가장 최근 뉴스</h2>
+              </div>
+              <p id="statusMessage" class="status-message">검색어를 입력하면 최신 뉴스 흐름을 바로 가져옵니다.</p>
+            </div>
+            <div id="newsList" class="news-list"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <template id="newsItemTemplate">
+      <article class="news-item">
+        <div class="news-meta">
+          <span class="news-source"></span>
+          <time class="news-time"></time>
+        </div>
+        <a class="news-title" target="_blank" rel="noreferrer"></a>
+        <p class="news-original"></p>
+      </article>
+    </template>
+
+    <script src="/public/app.js" type="module"></script>
+  </body>
+</html>
