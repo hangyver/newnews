@@ -161,15 +161,23 @@ async function translateToEnglish(text) {
 }
 
 async function translateNewsItems(items) {
-  const translatedItems = await Promise.all(
-    items.map(async (item) => ({
-      ...item,
-      originalTitle: item.title,
-      translatedTitle: await translateToKorean(item.title),
-    })),
-  );
-
-  return translatedItems;
+  // 동시 요청량을 조절하여 로컬 및 API 런타임의 동시성 요청 제한과 구글 번역 API 차단을 예방합니다.
+  const batchSize = 5;
+  const translated = [];
+  
+  for (let i = 0; i < items.length; i += batchSize) {
+    const chunk = items.slice(i, i + batchSize);
+    const chunkResults = await Promise.all(
+      chunk.map(async (item) => ({
+        ...item,
+        originalTitle: item.title,
+        translatedTitle: await translateToKorean(item.title),
+      })),
+    );
+    translated.push(...chunkResults);
+  }
+  
+  return translated;
 }
 
 function parseGoogleNewsRss(xml) {
@@ -337,21 +345,49 @@ async function getGlobalSearchQueries(query) {
 
 async function fetchLatestNews(query) {
   const globalQueries = await getGlobalSearchQueries(query);
-  const [naverNews, googleNews, gdeltNews] = await Promise.all([
+  
+  // Promise.all 대신 Promise.allSettled를 도입하여 로컬 구동 시 특정 채널 장애가 메인 검색을 중단시키지 않도록 합니다.
+  const results = await Promise.allSettled([
     fetchNaverNews(query).catch((error) => ({
       enabled: Boolean(process.env.NAVER_CLIENT_ID && process.env.NAVER_CLIENT_SECRET),
       error: error instanceof Error ? error.message : "Naver news request failed",
       items: [],
     })),
     fetchNewsSource("Google News", async () => {
-      const groups = await Promise.all(globalQueries.map((item) => fetchGoogleNews(item)));
+      // 다중 언어 쿼리 병렬 호출 시 일부 쿼리 에러로 전체 구글 뉴스 수집이 실패하지 않도록 allSettled 처리합니다.
+      const queryResults = await Promise.allSettled(globalQueries.map((item) => fetchGoogleNews(item)));
+      const groups = queryResults.filter((r) => r.status === "fulfilled").map((r) => r.value);
+      const errors = queryResults.filter((r) => r.status === "rejected").map((r) => r.reason?.message || "Unknown error");
+      
+      if (groups.length === 0 && errors.length > 0) {
+        throw new Error(errors[0]);
+      }
       return mergeNewsItems(...groups);
     }),
     fetchNewsSource("GDELT", async () => {
-      const groups = await Promise.all(globalQueries.map((item) => fetchGdeltNews(item)));
+      const queryResults = await Promise.allSettled(globalQueries.map((item) => fetchGdeltNews(item)));
+      const groups = queryResults.filter((r) => r.status === "fulfilled").map((r) => r.value);
+      const errors = queryResults.filter((r) => r.status === "rejected").map((r) => r.reason?.message || "Unknown error");
+      
+      if (groups.length === 0 && errors.length > 0) {
+        throw new Error(errors[0]);
+      }
       return mergeNewsItems(...groups);
     }),
   ]);
+
+  // 각 데이터 프로바이더 별 정상 수집 완료 여부를 확인하고 대체 객체를 생성합니다.
+  const naverNews = results[0].status === "fulfilled" 
+    ? results[0].value 
+    : { enabled: false, items: [], error: results[0].reason?.message || "Naver news request failed" };
+    
+  const googleNews = results[1].status === "fulfilled" 
+    ? results[1].value 
+    : { name: "Google News", error: results[1].reason?.message || "Google News request failed", items: [] };
+    
+  const gdeltNews = results[2].status === "fulfilled" 
+    ? results[2].value 
+    : { name: "GDELT", error: results[2].reason?.message || "GDELT news request failed", items: [] };
 
   const news = mergeNewsItems(naverNews.items, googleNews.items, gdeltNews.items);
 
