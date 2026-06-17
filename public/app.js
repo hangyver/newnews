@@ -96,6 +96,10 @@ function renderNews(items) {
     const source = node.querySelector(".news-source");
     const time = node.querySelector(".news-time");
 
+    // 유튜브/SNS 썸네일 컨테이너 바인딩을 위한 선택기
+    const thumbContainer = node.querySelector(".news-thumbnail-container");
+    const thumbImg = node.querySelector(".news-thumbnail");
+
     const translatedTitle = item.translatedTitle || item.title;
     const originalTitle = item.originalTitle || item.title;
 
@@ -106,6 +110,27 @@ function renderNews(items) {
     source.textContent = item.source;
     time.textContent = `${formatRelativeDate(item.publishedAt)} · ${formatAbsoluteDate(item.publishedAt)}`;
     time.dateTime = item.publishedAt || "";
+
+    // 1. 소셜 미디어 플랫폼별 컬러 뱃지 렌더링 처리
+    const provider = (item.provider || "").toLowerCase();
+    const isSnsOrYoutube = ["twitter", "instagram", "threads", "reddit", "youtube"].includes(provider);
+    if (isSnsOrYoutube) {
+      const badge = document.createElement("span");
+      badge.className = `badge-sns badge-${provider}`;
+      badge.textContent = item.provider === "Twitter" ? "X" : item.provider;
+      // 타이틀 앵커 태그 바로 앞에 뱃지 엘리먼트 배치
+      title.parentNode.insertBefore(badge, title);
+    }
+
+    // 2. 유튜브 동영상일 경우 썸네일 활성화 및 이미지 설정
+    if (item.provider === "Youtube") {
+      thumbContainer.hidden = false;
+      // 썸네일 데이터가 공백인 RSS 우회 방식일 때, 고품질 무료 유튜브 플레이스홀더를 사용하여 레이아웃 완성도를 높입니다.
+      thumbImg.src = item.thumbnail || "https://images.unsplash.com/photo-1611162617213-7d7a39e9b1d7?w=320&q=80";
+      thumbImg.alt = translatedTitle;
+    } else {
+      thumbContainer.hidden = true;
+    }
 
     fragment.appendChild(node);
   });

@@ -343,7 +343,161 @@ async function getGlobalSearchQueries(query) {
   return [...new Set([query, translatedQuery].map((item) => sanitizeText(item)).filter(Boolean))];
 }
 
-async function fetchLatestNews(query) {
+async function fetchYoutubeSearch(query, env) {
+  const safeEnv = env || {};
+  const apiKey = safeEnv.YOUTUBE_API_KEY;
+
+  // 유튜브 API Key가 주입되어 있다면 공식 API를 우선 사용합니다.
+  if (apiKey) {
+    try {
+      const url = new URL("https://www.googleapis.com/youtube/v3/search");
+      url.searchParams.set("part", "snippet");
+      url.searchParams.set("q", query);
+      url.searchParams.set("type", "video");
+      url.searchParams.set("maxResults", "20");
+      url.searchParams.set("order", "date");
+      url.searchParams.set("key", apiKey);
+
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent": "newnews-local-app/1.0",
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Youtube API returned ${response.status}`);
+      }
+
+      const payload = await response.json();
+      const items = Array.isArray(payload.items) ? payload.items : [];
+
+      return items.map((item) => ({
+        title: decodeHtmlEntities(sanitizeText(item.snippet.title)),
+        url: `https://www.youtube.com/watch?v=${item.id.videoId}`,
+        source: item.snippet.channelTitle,
+        provider: "Youtube",
+        publishedAt: item.snippet.publishedAt ? new Date(item.snippet.publishedAt).toISOString() : null,
+        thumbnail: item.snippet.thumbnails?.high?.url || item.snippet.thumbnails?.medium?.url || "",
+      }));
+    } catch {
+      // 공식 API 장애 시 RSS 수집 방식으로 우회 처리합니다.
+      return fetchYoutubeRss(query);
+    }
+  } else {
+    // API 키가 없을 때 무중단 서빙을 위한 우회 RSS 파싱 처리
+    return fetchYoutubeRss(query);
+  }
+}
+
+async function fetchYoutubeRss(query) {
+  const rssUrl = new URL("https://news.google.com/rss/search");
+  rssUrl.searchParams.set("q", `site:youtube.com ${query}`);
+  rssUrl.searchParams.set("hl", "en-US");
+  rssUrl.searchParams.set("gl", "US");
+  rssUrl.searchParams.set("ceid", "US:en");
+
+  const response = await fetch(rssUrl, {
+    headers: {
+      "User-Agent": "newnews-local-app/1.0",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Youtube RSS fallback failed with ${response.status}`);
+  }
+
+  const xml = await response.text();
+  const items = parseGoogleNewsRss(xml).slice(0, 20);
+
+  return items.map((item) => ({
+    ...item,
+    provider: "Youtube",
+    thumbnail: "", // RSS 파싱 결과에는 공식 썸네일 경로가 없으므로 FE에서 플레이스홀더 이미지를 노출합니다.
+  }));
+}
+
+async function fetchSnsSearch(query) {
+  const rssUrl = new URL("https://news.google.com/rss/search");
+  // X(Twitter), Instagram, Threads, Reddit 검색 범주를 구글 RSS 연산자로 묶어 연동합니다.
+  rssUrl.searchParams.set("q", `(site:twitter.com OR site:x.com OR site:instagram.com OR site:threads.net OR site:reddit.com) ${query}`);
+  rssUrl.searchParams.set("hl", "en-US");
+  rssUrl.searchParams.set("gl", "US");
+  rssUrl.searchParams.set("ceid", "US:en");
+
+  const response = await fetch(rssUrl, {
+    headers: {
+      "User-Agent": "newnews-local-app/1.0",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`SNS search request failed with ${response.status}`);
+  }
+
+  const xml = await response.text();
+  const rawItems = parseGoogleNewsRss(xml).slice(0, 30);
+
+  return rawItems.map((item) => {
+    const host = getHostname(item.url);
+    let provider = "SNS";
+    
+    // 호스트 도메인 명에 맞게 플랫폼 뱃지를 할당합니다.
+    if (host.includes("twitter.com") || host.includes("x.com")) {
+      provider = "Twitter";
+    } else if (host.includes("instagram.com")) {
+      provider = "Instagram";
+    } else if (host.includes("threads.net")) {
+      provider = "Threads";
+    } else if (host.includes("reddit.com")) {
+      provider = "Reddit";
+    }
+
+    return {
+      ...item,
+      provider,
+    };
+  });
+}
+
+async function fetchLatestNews(query, mode) {
+  // 유튜브 모드일 경우 비디오 수집 로직 실행
+  if (mode === "youtube") {
+    try {
+      const items = await fetchYoutubeSearch(query, process.env);
+      return {
+        items: await translateNewsItems(items),
+        providers: {
+          youtube: {
+            enabled: true,
+            count: items.length,
+            error: null,
+          },
+        },
+      };
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : "Youtube search failed");
+    }
+  }
+
+  // SNS 모드일 경우 트위터/인스타/스레드/레딧 통합 피드 로직 실행
+  if (mode === "sns") {
+    try {
+      const items = await fetchSnsSearch(query);
+      return {
+        items: await translateNewsItems(items),
+        providers: {
+          sns: {
+            enabled: true,
+            count: items.length,
+            error: null,
+          },
+        },
+      };
+    } catch (error) {
+      throw new Error(error instanceof Error ? error.message : "SNS search failed");
+    }
+  }
+
   const globalQueries = await getGlobalSearchQueries(query);
   
   // Promise.all 대신 Promise.allSettled를 도입하여 로컬 구동 시 특정 채널 장애가 메인 검색을 중단시키지 않도록 합니다.
@@ -519,7 +673,7 @@ const server = createServer(async (req, res) => {
 
     try {
       const [newsResult, stock] = await Promise.all([
-        fetchLatestNews(query),
+        fetchLatestNews(query, mode),
         mode === "stock" || (mode === "auto" && isLikelyStockQuery(query))
           ? fetchStockData(query).catch(() => null)
           : Promise.resolve(null),

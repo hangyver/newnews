@@ -389,3 +389,105 @@ body {
     min-height: 52px;
   }
 }
+
+/* 유튜브 썸네일 레이아웃 및 재생 버튼 오버레이 */
+.news-item:has(.news-thumbnail-container:not([hidden])) {
+  display: flex;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.news-thumbnail-container {
+  position: relative;
+  flex-shrink: 0;
+  width: 160px;
+  aspect-ratio: 16 / 9;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: #020710;
+}
+
+.news-thumbnail {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.play-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  opacity: 0.8;
+  transition: opacity 180ms ease, background 180ms ease;
+}
+
+.news-thumbnail-container:hover .play-overlay {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.play-overlay svg {
+  width: 36px;
+  height: 36px;
+  color: #fff;
+  filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.6));
+}
+
+.news-content-area {
+  flex-grow: 1;
+}
+
+/* SNS 플랫폼 뱃지 스타일 */
+.badge-sns {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #fff;
+  margin-right: 8px;
+}
+
+.badge-twitter {
+  background: #1DA1F2;
+}
+
+.badge-instagram {
+  background: linear-gradient(45deg, #f09433 0%, #e6683c 25%, #dc2743 50%, #cc2366 75%, #bc1888 100%);
+}
+
+.badge-threads {
+  background: #000000;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.badge-reddit {
+  background: #FF4500;
+}
+
+.badge-youtube {
+  background: #FF0000;
+}
+
+/* 모바일 디바이스 최적화 */
+@media (max-width: 640px) {
+  .news-item:has(.news-thumbnail-container:not([hidden])) {
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .news-thumbnail-container {
+    width: 100%;
+    max-width: none;
+  }
+}
+

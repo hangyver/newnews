@@ -28,6 +28,8 @@
                 <button class="mode-button active" data-mode="auto" type="button">자동</button>
                 <button class="mode-button" data-mode="news" type="button">뉴스</button>
                 <button class="mode-button" data-mode="stock" type="button">주식</button>
+                <button class="mode-button" data-mode="youtube" type="button">유튜브</button>
+                <button class="mode-button" data-mode="sns" type="button">SNS</button>
               </div>
               <label class="refresh-toggle">
                 <input id="autoRefresh" type="checkbox" checked />
@@ -93,12 +95,20 @@
 
     <template id="newsItemTemplate">
       <article class="news-item">
-        <div class="news-meta">
-          <span class="news-source"></span>
-          <time class="news-time"></time>
+        <div class="news-thumbnail-container" hidden>
+          <img class="news-thumbnail" src="" alt="Thumbnail" loading="lazy" />
+          <div class="play-overlay">
+            <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+          </div>
         </div>
-        <a class="news-title" target="_blank" rel="noreferrer"></a>
-        <p class="news-original"></p>
+        <div class="news-content-area">
+          <div class="news-meta">
+            <span class="news-source"></span>
+            <time class="news-time"></time>
+          </div>
+          <a class="news-title" target="_blank" rel="noreferrer"></a>
+          <p class="news-original"></p>
+        </div>
       </article>
     </template>
 
