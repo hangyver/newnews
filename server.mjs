@@ -129,54 +129,92 @@ async function translateToKorean(text) {
   }
 }
 
+// 사용할 수 있는 무료 CORS 프록시 제공업체 목록입니다.
+// 특정 프록시가 오버로드되거나 522 타임아웃이 발생하면 다음 순서의 프록시로 자동 전환됩니다.
+const PROXY_PROVIDERS = [
+  // 1순위: corsproxy.io (대역폭이 넓고 속도가 빠름)
+  {
+    name: "corsproxy.io",
+    getUrl: (url) => `https://corsproxy.io/?${encodeURIComponent(url.toString())}`,
+    parse: async (res) => await res.text()
+  },
+  // 2순위: allorigins.win (무료 오픈소스 프록시, JSON 래핑 형태)
+  {
+    name: "allorigins.win",
+    getUrl: (url) => `https://api.allorigins.win/get?url=${encodeURIComponent(url.toString())}`,
+    parse: async (res) => {
+      const payload = await res.json();
+      if (!payload || !payload.contents) {
+        throw new Error("Empty allorigins payload");
+      }
+      return payload.contents;
+    }
+  },
+  // 3순위: codetabs.com (API 요청용 대체 프록시)
+  {
+    name: "codetabs.com",
+    getUrl: (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url.toString())}`,
+    parse: async (res) => await res.text()
+  }
+];
+
 async function fetchRssWithProxy(url) {
-  // allorigins 무료 CORS/IP 우회 프록시 서비스를 이용해 Cloudflare의 IP 차단 문제를 우회합니다.
-  const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url.toString())}`;
-  
-  const response = await fetch(proxyUrl, {
-    headers: {
-      "User-Agent": "newnews-local-app/1.0",
-    },
-  });
+  let lastError = null;
 
-  if (!response.ok) {
-    throw new Error(`Proxy bypass request failed with ${response.status}`);
+  // 순차적으로 프록시 리스트를 순회하며 정상 데이터를 획득할 때까지 시도합니다.
+  for (const provider of PROXY_PROVIDERS) {
+    try {
+      const proxyUrl = provider.getUrl(url);
+      
+      // 6초 이상 지연되는 프록시는 522 타임아웃 대기 전에 중단시키고 다음 프록시로 넘기기 위해 AbortSignal을 설정합니다.
+      const response = await fetch(proxyUrl, {
+        headers: {
+          "User-Agent": "newnews-local-app/1.0",
+        },
+        signal: AbortSignal.timeout(6000) // 6초 타임아웃 설정
+      });
+
+      if (!response.ok) {
+        throw new Error(`${provider.name} responded with status ${response.status}`);
+      }
+
+      const contents = await provider.parse(response);
+      if (contents && contents.trim()) {
+        return contents; // 정상 파싱 완료 시 즉시 XML 반환
+      }
+      throw new Error(`Empty response from proxy ${provider.name}`);
+    } catch (error) {
+      lastError = error;
+      // 현재 프록시가 지연되거나 오류가 나면 기록 후 다음 프록시로 계속 진행합니다.
+    }
   }
 
-  const payload = await response.json();
-  if (!payload || !payload.contents) {
-    throw new Error("Empty proxy bypass payload");
-  }
-
-  return payload.contents; // XML 내용 반환
+  throw new Error(`모든 우회 프록시 서버 호출에 실패했습니다. 마지막 오류: ${lastError ? lastError.message : "알 수 없음"}`);
 }
 
 async function fetchRssWithFallback(url) {
   try {
-    // 1차 시도: 직접 요청 (로컬 환경 등 차단이 우회된 경우 극도로 빠른 기가비트 전송)
+    // 1차 시도: 직접 요청 (로컬 환경 등 구글 차단 대역이 아니면 고속 전송 수행)
     const response = await fetch(url, {
       headers: {
         "User-Agent": "newnews-local-app/1.0",
       },
+      signal: AbortSignal.timeout(5000) // 직접 호출은 5초 타임아웃 제한
     });
 
     if (response.ok) {
       return await response.text();
     }
 
-    // 구글 차단 응답(403, 429, 503) 발생 시 프록시 우회 기법으로 폴백합니다.
+    // 구글 RSS 차단 응답(403, 429, 503) 발생 시 프록시 폴백 실행
     if ([403, 429, 503].includes(response.status)) {
       return await fetchRssWithProxy(url);
     }
 
     throw new Error(`Direct fetch status failed with ${response.status}`);
   } catch (error) {
-    // 네트워크 단절 등 직접 호출 불능 시에도 2차 안전판으로 프록시 우회를 수행합니다.
-    try {
-      return await fetchRssWithProxy(url);
-    } catch {
-      throw new Error(error instanceof Error ? error.message : "Google RSS retrieval failed");
-    }
+    // 네트워크 단절 또는 예외 차단 시 다중 프록시 안전판 가동
+    return await fetchRssWithProxy(url);
   }
 }
 
