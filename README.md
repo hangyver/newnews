@@ -24,8 +24,8 @@ Cloudflare Pages에 연결할 때는 아래처럼 설정합니다.
 
 ```txt
 Framework preset: None
-Build command: 비워둠
-Build output directory: public
+Build command: npm run build
+Build output directory: dist
 Root directory: /
 ```
 
